@@ -20,6 +20,7 @@ sys.path.insert(0, str(BASE_DIR))
 from auto_convert import text_to_rows, save_csv, load_file
 import process_csv as pc
 import generate_dashboard as gd
+from generate_prd import generate_prd
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20MB
@@ -195,6 +196,28 @@ def status(jid: str):
         resp["filename"] = stem
 
     return jsonify(resp)
+
+
+@app.route("/download-prd/<jid>")
+def download_prd(jid: str):
+    if not jid.replace("-", "").isalnum():
+        return "잘못된 요청", 400
+    state = read_state(jid)
+    if not state or state.get("status") != "done":
+        return "결과 없음", 404
+    jd = job_dir(jid)
+    xlsx_files = list(jd.glob("*_요구분석.xlsx"))
+    if not xlsx_files:
+        return "XLSX 없음", 404
+    stem = state.get("filename", "result")
+    mode = state.get("summary", "")[:20]
+    prd_html = generate_prd(xlsx_files[0], stem.replace("_", " "), "")
+    return send_file(
+        io.BytesIO(prd_html.encode("utf-8")),
+        mimetype="text/html",
+        as_attachment=True,
+        download_name=f"{stem}_PRD.html",
+    )
 
 
 @app.route("/download/<jid>")

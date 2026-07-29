@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Requirements Analysis Agent</title>
+<title>Automated Requirements Analysis</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -397,7 +397,7 @@
       <line x1="16" y1="13" x2="8" y2="13"/>
       <line x1="16" y1="17" x2="8" y2="17"/>
     </svg>
-    Requirements Analysis Agent
+    Automated Requirements Analysis
   </div>
   <span class="badge">Beta</span>
 </header>
@@ -577,6 +577,7 @@
       <div style="display:flex;align-items:center;gap:8px">
         <div class="result-actions">
           <button class="btn-sm primary" onclick="downloadXlsx()">XLSX 다운로드</button>
+          <button class="btn-sm" onclick="downloadPrd()">PRD 다운로드</button>
           <button class="btn-sm" onclick="resetPage()">새 분석</button>
         </div>
         <div class="info-wrap">
@@ -763,6 +764,9 @@ async function pollStatus(jid, prevLogCount) {
 
 function downloadXlsx() {
   if (currentJobId) window.location.href = '/download/' + currentJobId;
+}
+function downloadPrd() {
+  if (currentJobId) window.location.href = '/download-prd/' + currentJobId;
 }
 
 function resetBtn() {
