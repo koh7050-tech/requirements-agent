@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 import io
+import json
 import os
 import sys
 import tempfile
@@ -24,48 +25,66 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20MB
 
 SUPPORTED = {".txt", ".md", ".docx", ".pdf", ".eml"}
-
-# job_id → {"status": running|done|error, "logs": [...], ...}
-_jobs: dict[str, dict] = {}
-_lock = threading.Lock()
+TMP = Path(tempfile.gettempdir()) / "req_agent_jobs"
+TMP.mkdir(exist_ok=True)
 
 
-def new_job() -> str:
-    jid = str(uuid.uuid4())
-    with _lock:
-        _jobs[jid] = {"status": "running", "logs": []}
-    return jid
+def job_dir(jid: str) -> Path:
+    d = TMP / jid
+    d.mkdir(exist_ok=True)
+    return d
 
 
-def log(jid: str, msg: str) -> None:
+def write_state(jid: str, state: dict) -> None:
+    (job_dir(jid) / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def read_state(jid: str) -> dict | None:
+    p = job_dir(jid) / "state.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def append_log(jid: str, msg: str) -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line)
-    with _lock:
-        if jid in _jobs:
-            _jobs[jid]["logs"].append(line)
+    with open(job_dir(jid) / "run.log", "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def read_logs(jid: str) -> list[str]:
+    p = job_dir(jid) / "run.log"
+    if not p.exists():
+        return []
+    return p.read_text(encoding="utf-8").splitlines()
 
 
 def run_pipeline(jid: str, text: str, filename: str) -> None:
-    try:
-        log(jid, f"=== 요구사항 분석 시작: {filename} ===")
+    jd = job_dir(jid)
+    write_state(jid, {"status": "running"})
 
-        log(jid, "Step 1/4  텍스트 파싱 중...")
+    try:
+        append_log(jid, f"=== 요구사항 분석 시작: {filename} ===")
+
+        append_log(jid, "Step 1/4  텍스트 파싱 중...")
         rows = text_to_rows(text, Path(filename).stem)
         if not rows:
             raise ValueError("파싱된 내용이 없습니다. 파일 내용을 확인해 주세요.")
-        log(jid, f"  → {len(rows)}개 항목 파싱 완료")
+        append_log(jid, f"  → {len(rows)}개 항목 파싱 완료")
 
-        tmp_dir = Path(tempfile.mkdtemp())
         stem = Path(filename).stem
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = tmp_dir / f"{stem}_{timestamp}.csv"
+        csv_path = jd / f"{stem}_{timestamp}.csv"
         save_csv(rows, csv_path)
-        log(jid, "Step 2/4  CSV 변환 완료")
+        append_log(jid, "Step 2/4  CSV 변환 완료")
 
-        log(jid, "Step 3/4  요구분석 XLSX 생성 중...")
-        xlsx_path = tmp_dir / f"{stem}_요구분석.xlsx"
-        summary_path = tmp_dir / f"{stem}_Executive_Summary.md"
+        append_log(jid, "Step 3/4  요구분석 XLSX 생성 중...")
+        xlsx_path = jd / f"{stem}_요구분석.xlsx"
+        summary_path = jd / f"{stem}_Executive_Summary.md"
 
         import openpyxl
         source_rows = pc.load_csv(csv_path)
@@ -86,33 +105,28 @@ def run_pipeline(jid: str, text: str, filename: str) -> None:
         doc_title = stem.replace("_", " ")
         summary_content = pc.generate_summary(data, doc_title, source_rows)
         summary_path.write_text(summary_content, encoding="utf-8")
-        log(jid, f"  → XLSX 생성 완료")
+        append_log(jid, "  → XLSX 생성 완료")
 
-        log(jid, "Step 4/4  대시보드 생성 중...")
-        dashboard_path = tmp_dir / "dashboard.html"
+        append_log(jid, "Step 4/4  대시보드 생성 중...")
+        dashboard_path = jd / "dashboard.html"
         gd.generate(
             xlsx_path=xlsx_path,
             output_path=dashboard_path,
             project=doc_title,
             mode=f"단일 분석 · {filename}",
         )
-        log(jid, "  → 대시보드 생성 완료")
-        log(jid, "=== 분석 완료 ===")
+        append_log(jid, "  → 대시보드 생성 완료")
+        append_log(jid, "=== 분석 완료 ===")
 
-        with _lock:
-            _jobs[jid].update({
-                "status": "done",
-                "dashboard_html": dashboard_path.read_text(encoding="utf-8"),
-                "xlsx_bytes": xlsx_path.read_bytes(),
-                "summary": summary_content,
-                "filename": stem,
-            })
+        write_state(jid, {
+            "status": "done",
+            "filename": stem,
+            "summary": summary_content,
+        })
 
     except Exception as e:
-        log(jid, f"[오류] {e}")
-        with _lock:
-            _jobs[jid]["status"] = "error"
-            _jobs[jid]["message"] = str(e)
+        append_log(jid, f"[오류] {e}")
+        write_state(jid, {"status": "error", "message": str(e)})
 
 
 @app.route("/")
@@ -122,7 +136,7 @@ def index():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    jid = new_job()
+    jid = str(uuid.uuid4())
 
     uploaded = request.files.get("file")
     text_input = request.form.get("text", "").strip()
@@ -131,8 +145,6 @@ def analyze():
         filename = uploaded.filename
         suffix = Path(filename).suffix.lower()
         if suffix not in SUPPORTED:
-            with _lock:
-                del _jobs[jid]
             return jsonify({"error": f"지원하지 않는 형식: {suffix}. ({', '.join(SUPPORTED)})"}), 400
 
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -147,13 +159,9 @@ def analyze():
         filename = "직접입력_회의록.txt"
         text = text_input
     else:
-        with _lock:
-            del _jobs[jid]
         return jsonify({"error": "파일 또는 텍스트를 입력해 주세요."}), 400
 
     if not text.strip():
-        with _lock:
-            del _jobs[jid]
         return jsonify({"error": "파일 내용이 비어 있습니다."}), 400
 
     threading.Thread(target=run_pipeline, args=(jid, text, filename), daemon=True).start()
@@ -162,32 +170,53 @@ def analyze():
 
 @app.route("/status/<jid>")
 def status(jid: str):
-    with _lock:
-        job = _jobs.get(jid)
-    if not job:
-        return jsonify({"status": "error", "message": "작업을 찾을 수 없습니다."}), 404
+    # jid 검증 (경로 조작 방지)
+    if not jid.replace("-", "").isalnum():
+        return jsonify({"status": "error", "message": "잘못된 요청"}), 400
 
-    resp = {"status": job["status"], "logs": job.get("logs", [])}
-    if job["status"] == "error":
-        resp["message"] = job.get("message", "")
-    if job["status"] == "done":
-        resp["dashboard_html"] = job.get("dashboard_html", "")
-        resp["summary"] = job.get("summary", "")
-        resp["filename"] = job.get("filename", "result")
+    state = read_state(jid)
+    logs = read_logs(jid)
+
+    if state is None:
+        # 아직 파일이 생성되지 않았으면 running으로 간주 (스레드 시작 직후)
+        return jsonify({"status": "running", "logs": logs})
+
+    resp = {"status": state["status"], "logs": logs}
+
+    if state["status"] == "error":
+        resp["message"] = state.get("message", "알 수 없는 오류")
+
+    if state["status"] == "done":
+        jd = job_dir(jid)
+        stem = state.get("filename", "result")
+        dashboard_path = jd / "dashboard.html"
+        resp["dashboard_html"] = dashboard_path.read_text(encoding="utf-8") if dashboard_path.exists() else ""
+        resp["summary"] = state.get("summary", "")
+        resp["filename"] = stem
+
     return jsonify(resp)
 
 
 @app.route("/download/<jid>")
 def download(jid: str):
-    with _lock:
-        job = _jobs.get(jid)
-    if not job or job.get("status") != "done":
+    if not jid.replace("-", "").isalnum():
+        return "잘못된 요청", 400
+
+    state = read_state(jid)
+    if not state or state.get("status") != "done":
         return "결과 없음", 404
+
+    jd = job_dir(jid)
+    stem = state.get("filename", "result")
+    xlsx_files = list(jd.glob("*_요구분석.xlsx"))
+    if not xlsx_files:
+        return "XLSX 없음", 404
+
     return send_file(
-        io.BytesIO(job["xlsx_bytes"]),
+        io.BytesIO(xlsx_files[0].read_bytes()),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name=f"{job['filename']}_요구분석.xlsx",
+        download_name=f"{stem}_요구분석.xlsx",
     )
 
 
