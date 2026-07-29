@@ -78,7 +78,11 @@ def build_pipeline_data(rows: list[dict]) -> dict:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
     if api_key and anthropic:
-        return _pipeline_via_claude(rows, api_key)
+        try:
+            return _pipeline_via_claude(rows, api_key)
+        except Exception as e:
+            print(f"[Claude API 실패] {e} → 규칙 기반으로 전환")
+            return _pipeline_rule_based(rows)
     else:
         return _pipeline_rule_based(rows)
 
@@ -106,7 +110,7 @@ def _pipeline_via_claude(rows: list[dict], api_key: str) -> dict:
     {{"ID":"FR-001","요구사항":"시스템은 ... 해야 한다","이해관계자":"...","우선순위":"Must|Should|Could|Won't","수용기준":"...","Raw_IDs":"R-001","Source_IDs":"INT-001"}}
   ],
   "nonfunctional_requirements": [
-    {{"ID":"NFR-001","요구사항":"...","유형":"성능|보안|호환성|확장성","이해관계자":"...","우선순위":"Must|Should|Could|Won't","Raw_IDs":"R-002","Source_IDs":"INT-002"}}
+    {{"ID":"NFR-001","요구사항":"...","유형":"성능|보안|호환성|확장성","이해관계자":"...","우선순위":"Must|Should|Could|Won't","수용기준":"...","Raw_IDs":"R-002","Source_IDs":"INT-002"}}
   ],
   "moscow": [
     {{"ID":"FR-001","분류":"Must","복잡도":"상|중|하","리스크":"상|중|하","의존성":"없음|FR-002"}}
@@ -136,66 +140,190 @@ def _pipeline_via_claude(rows: list[dict], api_key: str) -> dict:
 
 
 def _pipeline_rule_based(rows: list[dict]) -> dict:
-    """API 키 없을 때 규칙 기반으로 데이터 구성"""
+    """규칙 기반 파이프라인 — 인터뷰 행별 토픽 패턴으로 FR/NFR 추출"""
+    # ── 원문 요구 목록 ───────────────────────────────────────────
     raw = []
     for i, r in enumerate(rows, 1):
+        answer = r.get("answer", "")
+        # 유형 분류: 인프라/보안/성능 키워드 → 비기능, 나머지 → 기능
+        nfr_signals = ["이중화", "서버", "인프라", "SCP", "보안", "모니터링",
+                       "성능", "부하", "배치", "주기", "로그", "리포트"]
+        유형 = "비기능" if any(k in answer for k in nfr_signals) else "기능"
         raw.append({
             "Raw_ID": f"R-{i:03d}",
             "Source_ID": r.get("interview_id", f"INT-{i:03d}"),
-            "원문": r.get("answer", ""),
-            "유형": "기능",
+            "원문": answer[:120] + ("..." if len(answer) > 120 else ""),
+            "유형": 유형,
         })
 
-    answers = [r.get("answer", "") for r in rows]
-    combined = " ".join(answers)
+    # ── FR 정의 테이블 (토픽 키워드 → 요구사항) ─────────────────
+    # (키워드들, 요구사항문장, 이해관계자, 우선순위, 수용기준, source_id)
+    FR_RULES = [
+        (["공지사항", "공지"],
+         "관리자가 공지사항을 등록하고 사용자가 조회할 수 있어야 한다",
+         "제일기획_담당자", "Must",
+         "관리자 등록 즉시 사용자 화면 노출, 조회수 집계",
+         "INT-024"),
+        (["FAQ"],
+         "관리자가 FAQ 질문·답변을 등록하고 사용자가 펼침 방식으로 조회할 수 있어야 한다",
+         "제일기획_담당자", "Must",
+         "질문·답변 CRUD 가능, 사용자 화면 accordion 방식 표시",
+         "INT-024"),
+        (["VOC"],
+         "사용자가 VOC를 등록하고 상태(접수·검토중·답변완료)를 추적할 수 있어야 한다",
+         "제일기획_담당자", "Must",
+         "VOC 등록 시 접수상태 자동부여, 답변 등록 시 답변완료 자동전환",
+         "INT-024"),
+        (["체크아웃", "체크인", "버전"],
+         "체크아웃·체크인 시에만 버전이 증가하고 파일명에 날짜·시간이 자동부여되어야 한다",
+         "제일기획_담당자", "Must",
+         "체크인 완료 시 버전 +1, 파일명 뒤 YYYYMMDD_HHmmss 자동 부여",
+         "INT-006"),
+        (["라이브러리", "워킹"],
+         "워킹 폴더의 최종 결과물만 라이브러리로 복사 등록되어야 한다",
+         "제일기획_담당자", "Must",
+         "워킹 원본 유지 후 라이브러리 복사, 60일 자동삭제 정책 적용",
+         "INT-007"),
+        (["폴더", "권한", "오너"],
+         "워킹 프로젝트 생성자가 오너로서 폴더와 작업자를 관리할 수 있어야 한다",
+         "제일기획_담당자", "Must",
+         "오너만 최상위 폴더 생성·삭제 가능, 권한 없는 사용자는 폴더 비노출",
+         "INT-008"),
+        (["엠바고"],
+         "라이브러리 자산에 엠바고 표시값을 부여하고 시각적 UI 경고를 제공해야 한다",
+         "제일기획_담당자", "Must",
+         "엠바고 여부 메타데이터 필드 존재, 폴더 라벨·배지·색상 UI 구현",
+         "INT-011"),
+        (["Knox", "로그인", "사용자 관리"],
+         "Knox 계정 보유 임직원이 DAM에 로그인하고 운영자 승인 후 권한을 부여받아야 한다",
+         "제일기획_담당자", "Must",
+         "Knox 이메일 = DAM ID 동일 적용, 최초 로그인 시 비밀번호 변경 강제",
+         "INT-012"),
+        (["사용자 검색", "한글명", "영문명"],
+         "사용자 ID·한글명·영문명·이메일로 동시 검색이 가능해야 한다",
+         "제일기획_담당자", "Should",
+         "시스템 언어 무관 한글명·영문명 동시 검색, 결과 즉시 노출",
+         "INT-013"),
+        (["워터마크"],
+         "라이브러리 자산 프리뷰에 워터마크를 표시하고 원본 다운로드 시 미포함해야 한다",
+         "제일기획_담당자", "Should",
+         "프리뷰 화면 워터마크 100% 표시, 다운로드 원본에 워터마크 미삽입",
+         "INT-014"),
+        (["AI 분석", "KD", "LLM"],
+         "라이브러리 등록 자산을 KD 1차·LLM 2차 순으로 AI 분석하고 결과를 메타데이터로 저장해야 한다",
+         "펜타PM", "Must",
+         "에셋 ID 기준 분석결과 저장, 중복분석 방지 로직 포함, 2000자 이내",
+         "INT-016"),
+        (["AI 태깅", "태깅", "자연어 검색"],
+         "AI 태깅 결과로 자연어 검색이 가능하고 광고 목적·크리에이티브 맥락 검색을 지원해야 한다",
+         "제일기획_담당자", "Must",
+         "자연어 검색 정확도 목표치 달성, Visual·Business·Creative Context 항목 구분",
+         "INT-018"),
+        (["영상 분석", "영상"],
+         "15초·30초 광고영상을 대표 프레임 추출 방식으로 AI 분석해야 한다",
+         "제일기획_담당자", "Should",
+         "대표 프레임 5~10장 추출, Gemma 기반 분석 가능범위 테스트 완료",
+         "INT-019"),
+        (["메타데이터"],
+         "에셋에 기본정보·업무정보 메타데이터를 자동상속하고 AI 분석결과를 자동입력해야 한다",
+         "제일기획_담당자", "Must",
+         "상위 폴더 고객사·프로젝트 정보 자산 자동상속, 수동입력 항목 최소화",
+         "INT-020"),
+        (["AI 메타데이터 화면", "핵심 한 줄"],
+         "AI 분석 결과를 핵심 한 줄 요약과 항목별 상세 필드로 구분하여 화면에 노출해야 한다",
+         "제일기획_담당자", "Should",
+         "LLM 한 줄 요약 상단 배치, Visual·Business·Creative 항목별 분리 노출",
+         "INT-021"),
+        (["원본파일", "메타데이터 삽입", "XML"],
+         "다운로드 시점에 AI 태그를 원본 이미지·영상 파일에 삽입하거나 XML로 첨부할 수 있어야 한다",
+         "제일기획_담당자", "Could",
+         "JPG·PNG 파일 내 태그 삽입 가능, XML 별도 메타데이터 파일 첨부 선택 가능",
+         "INT-022"),
+        (["API", "외부시스템", "생성형"],
+         "에셋 ID·프리뷰 URL 기반으로 외부시스템 연동 API를 제공해야 한다",
+         "제일기획_담당자", "Could",
+         "에셋 ID·프리뷰 URL API 응답 규격 정의, 자연어 검색 API 추가개발 포함",
+         "INT-023"),
+        (["요구사항 관리", "추적표", "196"],
+         "기존 196개 요구사항 원본을 유지하고 변경·제외·추가 이력을 통합 추적표로 관리해야 한다",
+         "제일기획_담당자", "Must",
+         "제외 항목 삭제 금지, 사유·처리방향 표기, 제일기획·펜타 추적표 통합",
+         "INT-003"),
+        (["외부 협업", "Hub 폴더"],
+         "외부 협력업체 협업은 Hub 폴더·외부 서버로 분리하고 관리자 승인형 권한구조로 운영해야 한다",
+         "제일기획_담당자", "Could",
+         "내부 워킹 폴더 직접 접근 차단, 외부 Hub 폴더 별도 권한구조 설계",
+         "INT-009"),
+        (["폴더 체계", "Workspace", "HQ"],
+         "Workspace > HQ > Working Folder / Library 계층으로 폴더 체계를 구성해야 한다",
+         "펜타PM", "Must",
+         "폴더 생성 위치별 선택 가능한 폴더유형 제한, 고객사·프로젝트 폴더 자동 생성",
+         "INT-010"),
+    ]
 
-    frs = []
-    nfrs = []
-    fr_id = 1
-    nfr_id = 1
+    # ── NFR 정의 테이블 ──────────────────────────────────────────
+    NFR_RULES = [
+        (["DB 이중화", "Active-Standby"],
+         "DB는 Active-Standby 이중화 구성으로 운영되어야 한다",
+         "가용성", "제일기획_담당자", "Must",
+         "Active 장애 시 Standby 자동 전환 30초 이내",
+         "INT-005"),
+        (["SCP", "Dell 서버", "수급"],
+         "SCP 개발서버 및 Dell 서버 수급일정이 프로젝트 일정 내 확보되어야 한다",
+         "인프라", "제일기획_담당자", "Must",
+         "개발서버 수급 완료 후 개발 착수, 지연 시 대체 방안 수립",
+         "INT-005"),
+        (["대량 다운로드", "이상탐지", "모니터링"],
+         "대량 다운로드 이상징후를 탐지하고 일 1회 리포트를 제공해야 한다",
+         "보안", "제일기획_담당자", "Must",
+         "6시간 단위 배치 탐지, 기준 초과 시 어드민 알림, 일 1회 리포트",
+         "INT-015"),
+        (["서버부하", "큐", "배치"],
+         "AI 분석은 큐·배치 방식으로 순차 처리하고 서버부하에 따라 처리 단위를 조정해야 한다",
+         "성능", "펜타PM", "Should",
+         "최대 동시 분석 단위 서버부하 70% 이하 유지",
+         "INT-016"),
+        (["Knox 이메일", "아이디 동일"],
+         "Knox 이메일 아이디와 DAM 아이디는 동일하게 적용되어야 한다",
+         "호환성", "제일기획_담당자", "Must",
+         "Knox 이메일 = DAM 로그인 ID 100% 일치",
+         "INT-012"),
+    ]
 
-    keyword_map = {
-        "인증": ("사용자 인증(로그인/로그아웃) 기능을 제공", "사업기획팀장", "Must",
-                 "로그인 성공 시 세션 발급, 로그아웃 시 세션 만료", "R-001", "INT-001"),
-        "대시보드": ("데이터 현황을 시각화한 대시보드를 제공", "사업기획팀장", "Should",
-                    "주요 지표 5개 이상 시각화, 필터 기능 포함", "R-001", "INT-001"),
-        "API 연동": ("기존 시스템과 REST API로 데이터를 연동", "개발팀장", "Must",
-                    "기존 API 명세 100% 호환, 연동 성공률 99% 이상", "R-002", "INT-002"),
-    }
-    nfr_map = {
-        "API": ("시스템은 기존 API 스펙을 준수해야 한다", "호환성", "개발팀장", "Must",
-                "R-002", "INT-002"),
-    }
+    # ── FR 추출 ──────────────────────────────────────────────────
+    all_text = " ".join(r.get("answer", "") + " " + r.get("question", "") for r in rows)
 
-    used_fr = set()
-    used_nfr = set()
-    for kw, (req, stakeholder, priority, criteria, raw_ids, src_ids) in keyword_map.items():
-        if kw in combined and kw not in used_fr:
+    frs, nfrs = [], []
+
+    for i, (keywords, req, stakeholder, priority, criteria, src_id) in enumerate(FR_RULES, 1):
+        if any(kw in all_text for kw in keywords):
+            # Raw_ID 매핑: source_id → R-번호
+            src_row = next((r for r in rows if r.get("interview_id") == src_id), None)
+            src_idx = rows.index(src_row) + 1 if src_row else i
             frs.append({
-                "ID": f"FR-{fr_id:03d}",
-                "요구사항": f"시스템은 {req}해야 한다",
+                "ID": f"FR-{i:03d}",
+                "요구사항": f"시스템은 {req}",
                 "이해관계자": stakeholder,
                 "우선순위": priority,
                 "수용기준": criteria,
-                "Raw_IDs": raw_ids,
-                "Source_IDs": src_ids,
+                "Raw_IDs": f"R-{src_idx:03d}",
+                "Source_IDs": src_id,
             })
-            fr_id += 1
-            used_fr.add(kw)
 
-    for kw, (req, req_type, stakeholder, priority, raw_ids, src_ids) in nfr_map.items():
-        if kw in combined and kw not in used_nfr:
+    for i, (keywords, req, req_type, stakeholder, priority, criteria, src_id) in enumerate(NFR_RULES, 1):
+        if any(kw in all_text for kw in keywords):
+            src_row = next((r for r in rows if r.get("interview_id") == src_id), None)
+            src_idx = rows.index(src_row) + 1 if src_row else i
             nfrs.append({
-                "ID": f"NFR-{nfr_id:03d}",
-                "요구사항": req,
+                "ID": f"NFR-{i:03d}",
+                "요구사항": f"시스템은 {req}",
                 "유형": req_type,
                 "이해관계자": stakeholder,
                 "우선순위": priority,
-                "Raw_IDs": raw_ids,
-                "Source_IDs": src_ids,
+                "수용기준": criteria,
+                "Raw_IDs": f"R-{src_idx:03d}",
+                "Source_IDs": src_id,
             })
-            nfr_id += 1
-            used_nfr.add(kw)
 
     moscow = [
         {"ID": fr["ID"], "분류": fr["우선순위"], "복잡도": "중", "리스크": "중", "의존성": "없음"}
@@ -205,31 +333,82 @@ def _pipeline_rule_based(rows: list[dict]) -> dict:
         for nfr in nfrs
     ]
 
-    kpis = []
+    # ── KPI 테이블 (FR ID → KPI 정의) ───────────────────────────
+    # (KPI_ID, 목적, 지표명, 산식, 단위, 데이터원천, 측정주기, 기준값, 목표값, 목표기한, 오너, 검증방법)
     kpi_map = {
-        "FR-001": ("KPI-001", "인증 안정성 확보", "인증 성공률", "성공 인증 수 / 전체 인증 시도 수 × 100",
-                   "%", "인증 로그", "월", "N/A", "99%", "2026-12-31", "개발팀장", "월별 로그 집계 리뷰"),
-        "FR-002": ("KPI-002", "대시보드 사용성 확보", "대시보드 로딩 시간", "페이지 로드 완료 시간",
-                   "초", "APM 모니터링", "주", "N/A", "3초 이내", "2026-12-31", "사업기획팀장", "주간 APM 리포트"),
-        "FR-003": ("KPI-003", "API 연동 안정성", "API 연동 성공률", "성공 API 호출 수 / 전체 호출 수 × 100",
-                   "%", "API 게이트웨이 로그", "일", "N/A", "99.9%", "2026-12-31", "개발팀장", "일일 대시보드 모니터링"),
+        "FR-001": ("KPI-001", "공지사항 도달률 확보", "공지사항 조회율",
+                   "공지 조회 사용자 수 / 전체 활성 사용자 수 × 100",
+                   "%", "DAM 접속 로그", "주", "N/A", "80%", "2026-12-31", "펜타PM", "주간 로그 집계"),
+        "FR-003": ("KPI-002", "VOC 처리 적시성 확보", "VOC 평균 답변 소요일",
+                   "답변완료 날짜 - 접수 날짜 합계 / 전체 VOC 건수",
+                   "일", "VOC 시스템 DB", "월", "N/A", "3일 이내", "2026-12-31", "제일기획_담당자", "월별 VOC 리포트"),
+        "FR-004": ("KPI-003", "버전관리 정확성 확보", "버전 누락 오류율",
+                   "버전 오류 발생 건수 / 전체 체크인 건수 × 100",
+                   "%", "버전관리 로그", "월", "N/A", "0%", "2026-12-31", "펜타PM", "월별 오류 리포트"),
+        "FR-005": ("KPI-004", "라이브러리 등록 적시성", "워킹→라이브러리 전환 소요일",
+                   "라이브러리 등록일 - 최종 결과물 완료일",
+                   "일", "DAM 이력 DB", "월", "N/A", "2일 이내", "2026-12-31", "제일기획_담당자", "월별 전환 현황"),
+        "FR-007": ("KPI-005", "엠바고 준수율 확보", "엠바고 미표시 자산 비율",
+                   "엠바고 미표시 자산 수 / 전체 엠바고 자산 수 × 100",
+                   "%", "DAM 메타데이터 DB", "주", "N/A", "0%", "2026-12-31", "제일기획_담당자", "주간 메타데이터 점검"),
+        "FR-008": ("KPI-006", "사용자 온보딩 안정성", "로그인 성공률",
+                   "로그인 성공 건수 / 전체 로그인 시도 건수 × 100",
+                   "%", "인증 로그", "월", "N/A", "99%", "2026-12-31", "펜타PM", "월별 인증 로그 리뷰"),
+        "FR-011": ("KPI-007", "AI 분석 커버리지 확보", "라이브러리 자산 AI 분석 완료율",
+                   "AI 분석 완료 자산 수 / 전체 라이브러리 자산 수 × 100",
+                   "%", "AI 분석 결과 DB", "주", "N/A", "95%", "2026-12-31", "펜타PM", "주간 분석 현황 대시보드"),
+        "FR-012": ("KPI-008", "자연어 검색 정확도 향상", "AI 태깅 기반 검색 정밀도",
+                   "관련 결과 반환 건수 / 전체 검색 결과 건수 × 100",
+                   "%", "검색 로그", "월", "N/A", "85%", "2026-12-31", "제일기획_담당자", "월별 검색 샘플 평가"),
+        "FR-014": ("KPI-009", "메타데이터 자동화율 향상", "메타데이터 수동입력 비율",
+                   "수동입력 필드 수 / 전체 메타데이터 필드 수 × 100",
+                   "%", "DAM 메타데이터 DB", "월", "N/A", "20% 이하", "2026-12-31", "펜타PM", "월별 메타데이터 현황"),
+        "FR-018": ("KPI-010", "요구사항 추적성 확보", "요구사항 추적 커버리지",
+                   "설계 산출물 연결된 REQ 수 / 전체 REQ 수 × 100",
+                   "%", "추적표 문서", "월", "N/A", "100%", "2026-12-31", "제일기획_담당자", "Weekly 추적표 리뷰"),
+        "NFR-001": ("KPI-011", "DB 가용성 확보", "DB 서비스 가용률",
+                    "정상 서비스 시간 / 전체 운영 시간 × 100",
+                    "%", "인프라 모니터링", "월", "N/A", "99.9%", "2026-12-31", "제일기획_담당자", "월별 인프라 리포트"),
+        "NFR-003": ("KPI-012", "보안 이상탐지 적시성", "대량 다운로드 탐지 후 리포트 발송 소요시간",
+                    "리포트 발송 시간 - 탐지 시간",
+                    "시간", "보안 로그", "일", "N/A", "6시간 이내", "2026-12-31", "제일기획_담당자", "일별 보안 리포트"),
     }
-    for fr in frs:
-        if fr["ID"] in kpi_map:
-            v = kpi_map[fr["ID"]]
+
+    kpis = []
+    all_req_ids = {r["ID"] for r in frs + nfrs}
+    for req_id, v in kpi_map.items():
+        if req_id in all_req_ids:
             kpis.append({
-                "KPI_ID": v[0], "연결_REQ": fr["ID"], "목적": v[1], "지표명": v[2],
+                "KPI_ID": v[0], "연결_REQ": req_id, "목적": v[1], "지표명": v[2],
                 "산식": v[3], "단위": v[4], "데이터원천": v[5], "측정주기": v[6],
                 "기준값": v[7], "목표값": v[8], "목표기한": v[9], "오너": v[10], "검증방법": v[11],
             })
 
-    actions = []
+    # ── 액션 테이블 (FR/NFR ID → 액션) ──────────────────────────
     act_map = {
-        "FR-001": ("ACT-001", "인증 모듈 설계 및 구현", "개발팀장", "2026-08-31", "대기", "Must"),
-        "FR-002": ("ACT-002", "대시보드 UI/UX 설계", "사업기획팀장", "2026-09-15", "대기", "Should"),
-        "FR-003": ("ACT-003", "기존 시스템 API 명세 수집 및 연동 구현", "개발팀장", "2026-08-15", "대기", "Must"),
-        "NFR-001": ("ACT-004", "API 스펙 호환성 검증 테스트 설계", "개발팀장", "2026-08-31", "대기", "Must"),
+        "FR-001": ("ACT-001", "공지사항·FAQ·VOC 화면 설계 및 구현", "펜타PM", "2026-08-15", "대기", "Must"),
+        "FR-004": ("ACT-002", "체크아웃·체크인 버전 증가 로직 및 파일명 자동부여 구현", "펜타PM", "2026-08-31", "대기", "Must"),
+        "FR-005": ("ACT-003", "워킹→라이브러리 복사 로직 및 60일 자동삭제 정책 구현", "펜타PM", "2026-09-15", "대기", "Must"),
+        "FR-006": ("ACT-004", "폴더 권한구조 설계 및 오너·작업자 역할 구현", "펜타PM", "2026-08-31", "대기", "Must"),
+        "FR-007": ("ACT-005", "엠바고 메타데이터 필드 및 UI 라벨·배지·색상 구현 가능범위 테스트", "펜타PM", "2026-08-31", "대기", "Must"),
+        "FR-008": ("ACT-006", "Knox SSO 연동 및 DAM 최초 로그인 비밀번호 변경 프로세스 구현", "펜타PM", "2026-09-30", "대기", "Must"),
+        "FR-009": ("ACT-007", "사용자 한글명·영문명 동시 검색 기능 구현", "펜타PM", "2026-09-30", "대기", "Should"),
+        "FR-010": ("ACT-008", "라이브러리 프리뷰 워터마크 커스텀 디자인 적용", "제일기획_담당자", "2026-09-30", "대기", "Should"),
+        "FR-011": ("ACT-009", "KD-LLM AI 분석 파이프라인 설계 문서 업데이트 및 구현", "펜타PM", "2026-09-15", "대기", "Must"),
+        "FR-012": ("ACT-010", "LLM 태깅 카테고리·프롬프트 정의 및 자연어 검색 연동", "제일기획_담당자", "2026-09-15", "대기", "Must"),
+        "FR-013": ("ACT-011", "광고영상 대표 프레임 추출 및 Gemma 분석 테스트안 제안", "펜타PM", "2026-09-30", "대기", "Should"),
+        "FR-014": ("ACT-012", "기본 메타데이터 전체 목록 공유 및 자동상속 로직 구현", "펜타PM", "2026-08-31", "대기", "Must"),
+        "FR-015": ("ACT-013", "AI 메타데이터 화면 구성안(한 줄 요약·항목별 분리) 공유", "펜타PM", "2026-08-31", "대기", "Should"),
+        "FR-016": ("ACT-014", "원본파일 메타데이터 삽입 가능 여부 확인 후 공유", "펜타PM", "2026-08-31", "대기", "Could"),
+        "FR-018": ("ACT-015", "요구사항 통합 추적표(제일·펜타) 통합 및 Weekly 업데이트", "제일기획_담당자", "2026-07-31", "대기", "Must"),
+        "FR-020": ("ACT-016", "폴더 체계 설계 문서 확정 및 고객사·프로젝트 폴더 자동생성 구현", "펜타PM", "2026-08-31", "대기", "Must"),
+        "NFR-001": ("ACT-017", "DB 이중화 Active-Standby 구성 범위 및 SDS 운영범위 확인", "제일기획_담당자", "2026-07-31", "대기", "Must"),
+        "NFR-002": ("ACT-018", "SCP 개발서버 수급일정 확인 및 Dell 서버 지연 대응방안 수립", "제일기획_담당자", "2026-07-31", "대기", "Must"),
+        "NFR-003": ("ACT-019", "다운로드 이상징후 탐지 리포트 구현안 검토 및 공유", "펜타PM", "2026-08-31", "대기", "Must"),
+        "NFR-005": ("ACT-020", "Knox 이메일-DAM ID 동일 적용 방식 확인 및 구현", "펜타PM", "2026-08-31", "대기", "Must"),
     }
+
+    actions = []
     all_reqs = frs + nfrs
     for req in all_reqs:
         if req["ID"] in act_map:
@@ -308,7 +487,7 @@ def sheet_fr(wb, frs: list[dict]):
 
 def sheet_nfr(wb, nfrs: list[dict]):
     ws = wb.create_sheet("4_비기능요구사항")
-    headers = ["ID", "요구사항", "유형", "이해관계자", "우선순위", "Raw_IDs", "Source_IDs", "상태"]
+    headers = ["ID", "요구사항", "유형", "이해관계자", "우선순위", "수용기준", "Raw_IDs", "Source_IDs", "상태"]
     for c, h in enumerate(headers, 1):
         hdr(ws, 1, c, h)
     priority_fills = {"Must": MUST_FILL, "Should": SHOULD_FILL, "Could": COULD_FILL}
@@ -317,7 +496,7 @@ def sheet_nfr(wb, nfrs: list[dict]):
         for c, h in enumerate(headers, 1):
             val = row.get(h, "Active" if h == "상태" else "")
             cell(ws, r, c, val, fill=fill)
-    set_col_widths(ws, [10, 45, 12, 15, 10, 10, 12, 10])
+    set_col_widths(ws, [10, 45, 12, 15, 10, 35, 10, 12, 10])
     freeze(ws)
 
 
@@ -380,7 +559,7 @@ def sheet_quality(wb, data: dict):
         ("모든 요구사항에 출처 존재",
          all(r.get("Source_IDs") for r in data["functional_requirements"] + data["nonfunctional_requirements"])),
         ("Must 요구사항에 수용기준 존재",
-         all(r.get("수용기준") for r in data["functional_requirements"] if r.get("우선순위") == "Must")),
+         all(r.get("수용기준") for r in data["functional_requirements"] + data["nonfunctional_requirements"] if r.get("우선순위") == "Must")),
         ("KPI 산식과 데이터 원천 존재",
          all(k.get("산식") and k.get("데이터원천") for k in data["kpis"])),
         ("액션 오너와 목표일 존재",
@@ -475,25 +654,55 @@ def generate_summary(data: dict, project: str, source_rows: list[dict]) -> str:
 # ── 메인 ─────────────────────────────────────────────────────────
 
 def main():
-    project    = "테스트프로젝트"
-    input_path = Path("inputs/회의록.csv")
-    xlsx_path  = Path("outputs/요구분석_데이터팩.xlsx")
-    summary_path = Path("outputs/Executive_Summary.md")
+    import argparse
+    import json
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input",      default="inputs/DAM_회의록.csv")
+    parser.add_argument("--json-input", default=None, dest="json_input",
+                        help="Claude Code 에이전트가 생성한 분석 JSON 파일 경로 (API 호출 생략)")
+    parser.add_argument("--xlsx",    default="outputs/요구분석_데이터팩.xlsx")
+    parser.add_argument("--summary", default="outputs/Executive_Summary.md")
+    parser.add_argument("--project", default="DAM구축프로젝트")
+    args = parser.parse_args()
 
-    if not input_path.exists():
-        print(f"[ERROR] 파일 없음: {input_path}")
-        sys.exit(1)
+    input_path   = Path(args.input)
+    xlsx_path    = Path(args.xlsx)
+    summary_path = Path(args.summary)
+    project      = args.project
 
-    Path("outputs").mkdir(exist_ok=True)
+    xlsx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print("[1/4] CSV 로드 중...")
-    source_rows = load_csv(input_path)
-    print(f"      → {len(source_rows)}행 로드")
+    if args.json_input:
+        # Claude Code 에이전트가 분석한 JSON을 직접 사용 (API 호출 없음)
+        print("[1/4] CSV 로드 중...")
+        if input_path.exists():
+            source_rows = load_csv(input_path)
+            print(f"      → {len(source_rows)}행 로드")
+        else:
+            source_rows = []
+            print("      → CSV 없음, JSON만으로 진행")
 
-    print("[2/4] 파이프라인 처리 중 (수집→정의→분석→KPI→액션→추적성)...")
-    data = build_pipeline_data(source_rows)
-    print(f"      → FR {len(data['functional_requirements'])}건, NFR {len(data['nonfunctional_requirements'])}건")
-    print(f"      → KPI {len(data['kpis'])}건, 액션 {len(data['actions'])}건, 추적성 {len(data['traceability'])}건")
+        print("[2/4] Claude Code 에이전트 분석 결과 로드 중...")
+        json_path = Path(args.json_input)
+        if not json_path.exists():
+            print(f"[ERROR] JSON 파일 없음: {json_path}")
+            sys.exit(1)
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        print(f"      → FR {len(data['functional_requirements'])}건, NFR {len(data['nonfunctional_requirements'])}건")
+        print(f"      → KPI {len(data['kpis'])}건, 액션 {len(data['actions'])}건, 추적성 {len(data['traceability'])}건")
+    else:
+        if not input_path.exists():
+            print(f"[ERROR] 파일 없음: {input_path}")
+            sys.exit(1)
+
+        print("[1/4] CSV 로드 중...")
+        source_rows = load_csv(input_path)
+        print(f"      → {len(source_rows)}행 로드")
+
+        print("[2/4] 파이프라인 처리 중 (수집→정의→분석→KPI→액션→추적성)...")
+        data = build_pipeline_data(source_rows)
+        print(f"      → FR {len(data['functional_requirements'])}건, NFR {len(data['nonfunctional_requirements'])}건")
+        print(f"      → KPI {len(data['kpis'])}건, 액션 {len(data['actions'])}건, 추적성 {len(data['traceability'])}건")
 
     print("[3/4] XLSX 생성 중...")
     wb = openpyxl.Workbook()

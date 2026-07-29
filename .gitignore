@@ -1,1 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.dam_env
+inputs/*.csv
+outputs/
 logs/
+drop/processed/
+drop/failed/
+*.xlsx
+!templates/*.html
