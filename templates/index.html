@@ -3,22 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>요구사항 분석 에이전트</title>
+<title>Requirements Analysis Agent</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0d0d0d;
-    --surface:   #161616;
-    --surface2:  #1e1e1e;
-    --border:    #2a2a2a;
-    --border2:   #333;
-    --text:      #f0f0f0;
-    --muted:     #888;
-    --accent:    #ffffff;
-    --green:     #3ecf8e;
-    --red:       #f04040;
-    --radius:    10px;
+    --bg:       #0d0d0d;
+    --surface:  #161616;
+    --surface2: #1e1e1e;
+    --border:   #2a2a2a;
+    --border2:  #383838;
+    --text:     #f0f0f0;
+    --muted:    #777;
+    --muted2:   #555;
+    --green:    #3ecf8e;
+    --red:      #f04040;
+    --radius:   10px;
   }
 
   body {
@@ -35,26 +35,26 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 32px;
-    height: 56px;
+    padding: 0 40px;
+    height: 54px;
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    background: rgba(13,13,13,.92);
+    background: rgba(13,13,13,.94);
     backdrop-filter: blur(12px);
-    z-index: 100;
+    z-index: 200;
   }
   .logo {
     display: flex;
     align-items: center;
     gap: 10px;
     font-weight: 700;
-    font-size: 15px;
-    letter-spacing: -.3px;
+    font-size: 14px;
+    letter-spacing: -.2px;
   }
-  .logo svg { color: var(--green); }
+  .logo svg { color: var(--green); flex-shrink: 0; }
   .badge {
-    font-size: 11px;
+    font-size: 10px;
     padding: 2px 8px;
     border: 1px solid var(--border2);
     border-radius: 20px;
@@ -64,37 +64,57 @@
 
   /* ── 히어로 ── */
   .hero {
-    padding: 72px 32px 48px;
-    max-width: 760px;
+    padding: 64px 40px 40px;
+    max-width: 1200px;
     margin: 0 auto;
   }
   .hero h1 {
-    font-size: 2.6rem;
+    font-size: 3rem;
     font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -.5px;
+    line-height: 1.15;
+    letter-spacing: -.6px;
     margin-bottom: 16px;
   }
   .hero p {
-    font-size: 1.05rem;
+    font-size: 1rem;
     color: var(--muted);
-    max-width: 520px;
-    line-height: 1.7;
+    max-width: 600px;
+    line-height: 1.75;
+    margin-bottom: 20px;
+  }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px;
+    padding: 3px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    color: var(--muted);
   }
 
-  /* ── 메인 컨테이너 ── */
+  /* ── 컨테이너 ── */
   .container {
-    max-width: 760px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 0 32px 80px;
+    padding: 0 40px 80px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
   }
+  .full-width { grid-column: 1 / -1; }
 
   /* ── 카드 ── */
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 24px;
+    padding: 22px 24px;
+    position: relative;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 16px;
   }
   .card-label {
@@ -103,18 +123,75 @@
     text-transform: uppercase;
     letter-spacing: .8px;
     color: var(--muted);
-    margin-bottom: 16px;
+  }
+
+  /* ── 인포 버튼 & 팝업 ── */
+  .info-wrap { position: relative; display: inline-flex; }
+  .info-btn {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .15s, color .15s;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .info-btn:hover { border-color: #555; color: var(--text); }
+  .info-btn.active { border-color: var(--green); color: var(--green); }
+
+  .info-popup {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 30px;
+    width: 280px;
+    background: #1a1a1a;
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 16px;
+    z-index: 300;
+    box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  }
+  .info-popup.open { display: block; }
+  .info-popup h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-row { margin-bottom: 10px; }
+  .info-row:last-child { margin-bottom: 0; }
+  .info-key {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .info-val {
+    font-size: 12px;
+    color: #bbb;
+    line-height: 1.55;
   }
 
   /* ── 탭 ── */
   .tabs {
     display: flex;
-    gap: 0;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 20px;
+    margin-bottom: 18px;
   }
   .tab {
-    padding: 8px 18px;
+    padding: 7px 16px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
@@ -127,7 +204,6 @@
   }
   .tab.active { color: var(--text); border-bottom-color: var(--text); }
   .tab:hover:not(.active) { color: #ccc; }
-
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
@@ -135,23 +211,20 @@
   .dropzone {
     border: 1px dashed var(--border2);
     border-radius: var(--radius);
-    padding: 36px 20px;
+    padding: 32px 20px;
     text-align: center;
     cursor: pointer;
     background: var(--surface2);
     transition: border-color .2s, background .2s;
   }
-  .dropzone:hover, .dropzone.drag-over {
-    border-color: #555;
-    background: #222;
-  }
-  .dropzone svg { color: var(--muted); margin-bottom: 12px; }
+  .dropzone:hover, .dropzone.drag-over { border-color: #555; background: #222; }
+  .dropzone svg { color: var(--muted); margin-bottom: 10px; }
   .dropzone p { color: var(--muted); font-size: 13px; }
   .dropzone span { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
-  .dropzone small { display: block; color: #555; margin-top: 6px; font-size: 11px; }
+  .dropzone small { display: block; color: var(--muted2); margin-top: 5px; font-size: 11px; }
   #file-input { display: none; }
   #file-name {
-    margin-top: 12px;
+    margin-top: 10px;
     font-size: 12px;
     color: var(--green);
     font-weight: 500;
@@ -159,7 +232,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 5px;
   }
 
   /* ── 텍스트 입력 ── */
@@ -168,16 +241,16 @@
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 13px 15px;
     color: var(--text);
     font-size: 13px;
     line-height: 1.7;
     resize: vertical;
-    min-height: 200px;
+    min-height: 190px;
     font-family: inherit;
     transition: border-color .2s;
   }
-  textarea::placeholder { color: #444; }
+  textarea::placeholder { color: #3a3a3a; }
   textarea:focus { outline: none; border-color: #444; }
 
   /* ── 버튼 ── */
@@ -195,19 +268,19 @@
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    margin-top: 16px;
+    margin-top: 14px;
     transition: opacity .15s;
-    letter-spacing: .2px;
+    letter-spacing: .1px;
   }
   .btn-run:hover { opacity: .88; }
   .btn-run:disabled { opacity: .3; cursor: not-allowed; }
 
   /* ── 오류 ── */
   .error-box {
-    background: rgba(240,64,64,.08);
-    border: 1px solid rgba(240,64,64,.3);
+    background: rgba(240,64,64,.07);
+    border: 1px solid rgba(240,64,64,.25);
     border-radius: var(--radius);
-    padding: 12px 16px;
+    padding: 11px 14px;
     color: #f07070;
     font-size: 12px;
     display: none;
@@ -216,12 +289,6 @@
 
   /* ── 로그 ── */
   #log-section { display: none; }
-  .log-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
   .log-status {
     display: flex;
     align-items: center;
@@ -234,16 +301,17 @@
     border-radius: 50%;
     background: var(--green);
     animation: pulse 1.2s infinite;
+    flex-shrink: 0;
   }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .dot.done { background: var(--green); animation: none; }
+  .dot.done  { animation: none; }
   .dot.error { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
 
   .progress-wrap {
     background: var(--border);
     border-radius: 2px;
     height: 2px;
-    margin-bottom: 12px;
+    margin: 12px 0;
     overflow: hidden;
   }
   .progress-bar {
@@ -253,21 +321,19 @@
     transition: width .5s ease;
     border-radius: 2px;
   }
-
   #log-box {
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 16px;
-    height: 220px;
+    padding: 14px 16px;
+    height: 240px;
     overflow-y: auto;
-    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-family: 'SF Mono','Fira Code','Courier New',monospace;
     font-size: 11.5px;
     line-height: 1.8;
-    color: #aaa;
+    color: #888;
   }
   #log-box::-webkit-scrollbar { width: 4px; }
-  #log-box::-webkit-scrollbar-track { background: transparent; }
   #log-box::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
   .log-line { white-space: pre-wrap; }
   .log-line.ok   { color: var(--green); }
@@ -276,13 +342,9 @@
 
   /* ── 결과 ── */
   #result-section { display: none; }
-  .result-actions {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
+  .result-actions { display: flex; gap: 8px; }
   .btn-sm {
-    padding: 7px 16px;
+    padding: 6px 14px;
     border-radius: 7px;
     border: 1px solid var(--border2);
     font-size: 12px;
@@ -292,48 +354,35 @@
     background: var(--surface2);
     color: var(--text);
   }
-  .btn-sm:hover { background: var(--surface); border-color: #555; }
-  .btn-sm.primary {
-    background: var(--green);
-    color: #000;
-    border-color: var(--green);
-  }
+  .btn-sm:hover { background: #222; border-color: #555; }
+  .btn-sm.primary { background: var(--green); color: #000; border-color: var(--green); }
   .btn-sm.primary:hover { opacity: .85; }
 
   #dashboard-frame {
     width: 100%;
-    height: 680px;
+    height: 720px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: #fff;
+    margin-top: 14px;
   }
 
   /* ── 스피너 ── */
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner {
-    width: 14px; height: 14px;
-    border: 2px solid rgba(0,0,0,.2);
+    width: 13px; height: 13px;
+    border: 2px solid rgba(0,0,0,.15);
     border-top-color: #000;
     border-radius: 50%;
     animation: spin .6s linear infinite;
     flex-shrink: 0;
   }
 
-  /* ── 태그 ── */
-  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
-  .tag {
-    font-size: 11px;
-    padding: 3px 10px;
-    border: 1px solid var(--border2);
-    border-radius: 20px;
-    color: var(--muted);
-  }
-
-  @media (max-width: 600px) {
-    .hero { padding: 48px 20px 32px; }
-    .hero h1 { font-size: 1.9rem; }
-    .container { padding: 0 20px 60px; }
+  @media (max-width: 860px) {
+    .container { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 2.2rem; }
     header { padding: 0 20px; }
+    .hero, .container { padding-left: 20px; padding-right: 20px; }
   }
 </style>
 </head>
@@ -348,31 +397,55 @@
       <line x1="16" y1="13" x2="8" y2="13"/>
       <line x1="16" y1="17" x2="8" y2="17"/>
     </svg>
-    요구사항 분석 에이전트
+    Requirements Analysis Agent
   </div>
   <span class="badge">Beta</span>
 </header>
 
 <!-- 히어로 -->
 <div class="hero">
-  <h1>회의록을 요구사항으로,<br>자동으로.</h1>
-  <p>문서를 업로드하거나 텍스트를 붙여넣으면 FR·NFR·KPI·액션 플랜을 자동으로 추출해 대시보드와 XLSX로 제공합니다.</p>
+  <h1>From Minutes<br>to Requirements —<br>Automatically.</h1>
+  <p>Upload a document or paste text to automatically extract FR, NFR, KPIs, and action plans — delivered as an interactive dashboard and XLSX report.</p>
   <div class="tags">
     <span class="tag">.txt</span>
     <span class="tag">.docx</span>
     <span class="tag">.pdf</span>
     <span class="tag">.eml</span>
     <span class="tag">.md</span>
-    <span class="tag">텍스트 입력</span>
+    <span class="tag">Text Input</span>
   </div>
 </div>
 
-<!-- 메인 -->
+<!-- 메인 그리드 -->
 <div class="container">
 
   <!-- 입력 카드 -->
-  <div class="card" id="input-card">
-    <div class="card-label">회의록 입력</div>
+  <div class="card full-width" id="input-card">
+    <div class="card-header">
+      <span class="card-label">Meeting Minutes Input</span>
+      <div class="info-wrap">
+        <button class="info-btn" onclick="toggleInfo('info-input', this)">i</button>
+        <div class="info-popup" id="info-input">
+          <h4>회의록 입력</h4>
+          <div class="info-row">
+            <div class="info-key">정의</div>
+            <div class="info-val">분석할 회의록 또는 요구사항 문서를 입력하는 영역입니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">지원 형식</div>
+            <div class="info-val">.txt, .docx, .pdf, .eml, .md 파일 업로드 또는 텍스트 직접 붙여넣기</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">권장 내용</div>
+            <div class="info-val">번호나 불릿(•, -, 1.)으로 구조화된 회의록일수록 분석 정확도가 높습니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">최대 용량</div>
+            <div class="info-val">파일 20MB 이하 / 텍스트 제한 없음</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('upload')">파일 업로드</button>
@@ -381,7 +454,7 @@
 
     <div class="tab-panel active" id="tab-upload">
       <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
           <polyline points="17 8 12 3 7 8"/>
           <line x1="12" y1="3" x2="12" y2="15"/>
@@ -406,32 +479,128 @@
     </div>
 
     <div class="error-box" id="error-box"></div>
-
-    <button class="btn-run" id="btn-run" onclick="startAnalysis()">
-      분석 시작
-    </button>
+    <button class="btn-run" id="btn-run" onclick="startAnalysis()">분석 시작</button>
   </div>
 
   <!-- 로그 카드 -->
-  <div class="card" id="log-section">
-    <div class="log-header">
-      <div class="card-label" style="margin:0">분석 진행 상황</div>
-      <div class="log-status">
-        <div class="dot" id="dot"></div>
-        <span id="status-text">처리 중...</span>
+  <div class="card" id="log-section" style="display:none">
+    <div class="card-header">
+      <span class="card-label">Analysis Progress</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="log-status">
+          <div class="dot" id="dot"></div>
+          <span id="status-text">Processing...</span>
+        </div>
+        <div class="info-wrap">
+          <button class="info-btn" onclick="toggleInfo('info-log', this)">i</button>
+          <div class="info-popup" id="info-log">
+            <h4>분석 진행 상황</h4>
+            <div class="info-row">
+              <div class="info-key">정의</div>
+              <div class="info-val">파이프라인 4단계의 실시간 처리 로그입니다.</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">Step 1</div>
+              <div class="info-val">텍스트 파싱 — 문서 구조 분석 및 섹션 분리</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">Step 2</div>
+              <div class="info-val">CSV 변환 — 인터뷰 형식으로 구조화</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">Step 3</div>
+              <div class="info-val">XLSX 생성 — FR/NFR/KPI/액션/추적성 9시트</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">Step 4</div>
+              <div class="info-val">대시보드 생성 — 인터랙티브 HTML 리포트</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
     <div id="log-box"></div>
   </div>
 
+  <!-- 분석 안내 카드 (로그 없을 때 우측 채움) -->
+  <div class="card" id="guide-card">
+    <div class="card-header">
+      <span class="card-label">Pipeline Overview</span>
+      <div class="info-wrap">
+        <button class="info-btn" onclick="toggleInfo('info-guide', this)">i</button>
+        <div class="info-popup" id="info-guide">
+          <h4>파이프라인 개요</h4>
+          <div class="info-row">
+            <div class="info-key">정의</div>
+            <div class="info-val">회의록 → 요구사항 분석까지의 자동화 흐름입니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">소요 시간</div>
+            <div class="info-val">파일 크기에 따라 10초~2분 소요됩니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">출력물</div>
+            <div class="info-val">인터랙티브 HTML 대시보드 + 9시트 XLSX 파일</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">STEP 1</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">텍스트 파싱</div>
+        <div style="font-size:12px;color:var(--muted)">문서 구조 분석 및 섹션 분리</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">STEP 2</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">CSV 변환</div>
+        <div style="font-size:12px;color:var(--muted)">인터뷰 구조로 데이터 정형화</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">STEP 3</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">XLSX 생성</div>
+        <div style="font-size:12px;color:var(--muted)">FR · NFR · KPI · 액션 · 추적성 9시트</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">STEP 4</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">대시보드 생성</div>
+        <div style="font-size:12px;color:var(--muted)">인터랙티브 HTML 리포트 출력</div>
+      </div>
+    </div>
+  </div>
+
   <!-- 결과 카드 -->
-  <div class="card" id="result-section">
-    <div class="log-header">
-      <div class="card-label" style="margin:0">분석 결과</div>
-      <div class="result-actions">
-        <button class="btn-sm primary" onclick="downloadXlsx()">XLSX 다운로드</button>
-        <button class="btn-sm" onclick="resetPage()">새 분석</button>
+  <div class="card full-width" id="result-section" style="display:none">
+    <div class="card-header">
+      <span class="card-label">Analysis Result</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="result-actions">
+          <button class="btn-sm primary" onclick="downloadXlsx()">XLSX 다운로드</button>
+          <button class="btn-sm" onclick="resetPage()">새 분석</button>
+        </div>
+        <div class="info-wrap">
+          <button class="info-btn" onclick="toggleInfo('info-result', this)">i</button>
+          <div class="info-popup" id="info-result" style="right:0">
+            <h4>분석 결과</h4>
+            <div class="info-row">
+              <div class="info-key">대시보드</div>
+              <div class="info-val">인터랙티브 HTML 리포트로 FR/NFR/KPI를 시각적으로 확인할 수 있습니다.</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">XLSX 다운로드</div>
+              <div class="info-val">9개 시트로 구성된 요구분석 데이터팩을 다운로드합니다.</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">포함 시트</div>
+              <div class="info-val">원본 · 원시요구사항 · FR · NFR · MoSCoW · KPI · 액션 · 추적성 · 품질Gate</div>
+            </div>
+            <div class="info-row">
+              <div class="info-key">새 분석</div>
+              <div class="info-val">처음으로 돌아가 새 회의록을 분석합니다.</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <iframe id="dashboard-frame" srcdoc=""></iframe>
@@ -443,6 +612,26 @@
 let currentJobId = null;
 let activeTab = 'upload';
 
+/* ── 인포 팝업 ── */
+function toggleInfo(id, btn) {
+  const popup = document.getElementById(id);
+  const isOpen = popup.classList.contains('open');
+  // 모두 닫기
+  document.querySelectorAll('.info-popup').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.info-btn').forEach(b => b.classList.remove('active'));
+  if (!isOpen) {
+    popup.classList.add('open');
+    btn.classList.add('active');
+  }
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.info-wrap')) {
+    document.querySelectorAll('.info-popup').forEach(p => p.classList.remove('open'));
+    document.querySelectorAll('.info-btn').forEach(b => b.classList.remove('active'));
+  }
+});
+
+/* ── 탭 ── */
 function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab').forEach((t, i) => {
@@ -452,32 +641,31 @@ function switchTab(tab) {
   document.getElementById('tab-text').classList.toggle('active', tab === 'text');
 }
 
+/* ── 드롭존 ── */
 const dropzone = document.getElementById('dropzone');
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
 dropzone.addEventListener('drop', e => {
   e.preventDefault();
   dropzone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) setFile(file);
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
 });
 document.getElementById('file-input').addEventListener('change', e => {
   if (e.target.files[0]) setFile(e.target.files[0]);
 });
-
 function setFile(file) {
-  const el = document.getElementById('file-name');
-  el.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3ecf8e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${file.name}`;
+  document.getElementById('file-name').innerHTML =
+    `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3ecf8e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${file.name}`;
   document.getElementById('file-input')._file = file;
 }
 
 function showError(msg) {
-  const box = document.getElementById('error-box');
-  box.textContent = msg;
-  box.style.display = 'block';
+  const b = document.getElementById('error-box');
+  b.textContent = msg; b.style.display = 'block';
 }
 function hideError() { document.getElementById('error-box').style.display = 'none'; }
 
+/* ── 분석 시작 ── */
 async function startAnalysis() {
   hideError();
   const btn = document.getElementById('btn-run');
@@ -495,14 +683,15 @@ async function startAnalysis() {
   }
 
   btn.disabled = true;
-  btn.innerHTML = '<div class="spinner"></div> 분석 중...';
+  btn.innerHTML = '<div class="spinner"></div> Analyzing...';
 
   document.getElementById('log-section').style.display = 'block';
+  document.getElementById('guide-card').style.display = 'none';
   document.getElementById('log-box').innerHTML = '';
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('progress-bar').style.width = '4%';
   document.getElementById('dot').className = 'dot';
-  document.getElementById('status-text').textContent = '처리 중...';
+  document.getElementById('status-text').textContent = 'Processing...';
 
   try {
     const res = await fetch('/analyze', { method: 'POST', body: formData });
@@ -516,6 +705,7 @@ async function startAnalysis() {
   }
 }
 
+/* ── 폴링 ── */
 async function pollStatus(jid, prevLogCount) {
   try {
     const res = await fetch('/status/' + jid);
@@ -525,11 +715,11 @@ async function pollStatus(jid, prevLogCount) {
     const logBox = document.getElementById('log-box');
     const bar = document.getElementById('progress-bar');
     const steps = ['Step 1', 'Step 2', 'Step 3', 'Step 4'];
-
     const logs = data.logs || [];
+
     for (let i = prevLogCount; i < logs.length; i++) {
-      const line = document.createElement('div');
       const msg = logs[i];
+      const line = document.createElement('div');
       let cls = 'log-line';
       if (msg.includes('[오류]')) cls += ' error';
       else if (msg.includes('완료') || msg.includes('PASS')) cls += ' ok';
@@ -554,13 +744,13 @@ async function pollStatus(jid, prevLogCount) {
 
     if (data.status === 'error') {
       document.getElementById('dot').className = 'dot error';
-      document.getElementById('status-text').textContent = '오류 발생';
+      document.getElementById('status-text').textContent = 'Error';
       showError('분석 오류: ' + (data.message || '알 수 없는 오류'));
       return;
     }
 
     document.getElementById('dot').className = 'dot done';
-    document.getElementById('status-text').textContent = '완료';
+    document.getElementById('status-text').textContent = 'Completed';
     document.getElementById('result-section').style.display = 'block';
     document.getElementById('dashboard-frame').srcdoc = data.dashboard_html;
     window.scrollTo({ top: document.getElementById('result-section').offsetTop - 20, behavior: 'smooth' });
@@ -584,6 +774,7 @@ function resetBtn() {
 function resetPage() {
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('log-section').style.display = 'none';
+  document.getElementById('guide-card').style.display = 'block';
   document.getElementById('progress-bar').style.width = '0';
   document.getElementById('file-name').innerHTML = '';
   document.getElementById('text-input').value = '';
