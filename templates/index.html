@@ -100,7 +100,6 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    align-items: start;
   }
   .full-width { grid-column: 1 / -1; }
 
@@ -289,7 +288,7 @@
   }
 
   /* ── 로그 ── */
-  #log-section { display: none; }
+  #log-section { display: none; flex-direction: column; min-height: 380px; }
   .log-status {
     display: flex;
     align-items: center;
@@ -327,7 +326,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 14px 16px;
-    height: 240px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     font-family: 'SF Mono','Fira Code','Courier New',monospace;
     font-size: 11.5px;
@@ -380,12 +380,13 @@
   }
 
   /* ── 요구사항 요약 ── */
-  #req-summary { display: none; }
+  #req-summary { display: flex; flex-direction: column; min-height: 380px; }
   .req-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 420px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
   .req-list::-webkit-scrollbar { width: 4px; }
@@ -652,7 +653,18 @@
         </div>
       </div>
     </div>
-    <div class="req-list" id="req-list"></div>
+    <div class="req-list" id="req-list">
+      <div id="req-placeholder" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;padding:24px 16px">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" style="color:var(--muted2);opacity:.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <div style="font-size:12px;color:var(--muted);font-weight:500">분석 대기 중</div>
+        <div style="font-size:11px;color:var(--muted2);line-height:1.7">문서를 업로드하거나 텍스트를 입력 후<br>분석을 시작하면 요구사항 목록이 표시됩니다.</div>
+      </div>
+    </div>
   </div>
 
   <!-- 결과 카드 -->
@@ -771,7 +783,7 @@ async function startAnalysis() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Analyzing...';
 
-  document.getElementById('log-section').style.display = 'block';
+  document.getElementById('log-section').style.display = 'flex';
   document.getElementById('guide-card').style.display = 'none';
   document.getElementById('log-box').innerHTML = '';
   document.getElementById('result-section').style.display = 'none';
@@ -841,8 +853,11 @@ async function pollStatus(jid, prevLogCount) {
     // 요구사항 요약 카드 채우기
     const reqs = data.requirements || [];
     const reqList = document.getElementById('req-list');
-    reqList.innerHTML = '';
+    const reqPh = document.getElementById('req-placeholder');
+    // clear previous items (keep placeholder node)
+    Array.from(reqList.children).forEach(c => { if (c.id !== 'req-placeholder') c.remove(); });
     if (reqs.length > 0) {
+      reqPh.style.display = 'none';
       const badgeClass = { 'Must':'badge-must','Should':'badge-should','Could':'badge-could',"Won't":'badge-wont' };
       let lastType = null;
       reqs.forEach(r => {
@@ -862,7 +877,8 @@ async function pollStatus(jid, prevLogCount) {
           '<span class="req-badge ' + cls + '">' + r.priority + '</span>';
         reqList.appendChild(item);
       });
-      document.getElementById('req-summary').style.display = 'block';
+    } else {
+      reqPh.style.display = 'flex';
     }
 
     document.getElementById('result-section').style.display = 'block';
@@ -897,9 +913,11 @@ function resetBtn() {
 function resetPage() {
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('log-section').style.display = 'none';
-  document.getElementById('req-summary').style.display = 'none';
-  document.getElementById('req-list').innerHTML = '';
   document.getElementById('guide-card').style.display = 'block';
+  // restore req-summary placeholder
+  Array.from(document.getElementById('req-list').children)
+    .forEach(c => { if (c.id !== 'req-placeholder') c.remove(); });
+  document.getElementById('req-placeholder').style.display = 'flex';
   document.getElementById('progress-bar').style.width = '0';
   document.getElementById('file-name').innerHTML = '';
   document.getElementById('text-input').value = '';
