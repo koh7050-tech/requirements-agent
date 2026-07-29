@@ -330,51 +330,64 @@ async function startAnalysis() {
     if (!res.ok || data.error) { showError(data.error || '서버 오류'); resetBtn(); return; }
 
     currentJobId = data.job_id;
-    streamLogs(currentJobId);
+    pollStatus(currentJobId, 0);
   } catch (e) {
     showError('서버 연결 실패: ' + e.message);
     resetBtn();
   }
 }
 
-function streamLogs(jid) {
-  const logBox = document.getElementById('log-box');
-  const bar = document.getElementById('progress-bar');
-  const steps = ['Step 1', 'Step 2', 'Step 3', 'Step 4'];
-  let stepIdx = 0;
+async function pollStatus(jid, prevLogCount) {
+  try {
+    const res = await fetch('/status/' + jid);
+    if (!res.ok) { showError('상태 확인 실패'); resetBtn(); return; }
+    const data = await res.json();
 
-  const es = new EventSource('/stream/' + jid);
-  es.onmessage = async (e) => {
-    const msg = e.data;
+    const logBox = document.getElementById('log-box');
+    const bar = document.getElementById('progress-bar');
+    const steps = ['Step 1', 'Step 2', 'Step 3', 'Step 4'];
 
-    if (msg === '__DONE__') {
-      es.close();
-      bar.style.width = '100%';
-      await loadResult(jid);
+    // 새 로그 줄만 추가
+    const logs = data.logs || [];
+    for (let i = prevLogCount; i < logs.length; i++) {
+      const line = document.createElement('div');
+      line.className = 'log-line' + (logs[i].includes('[오류]') ? ' error' : '');
+      line.textContent = logs[i];
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // 진행바 업데이트
+    const lastLog = logs[logs.length - 1] || '';
+    const stepIdx = steps.reduce((acc, s, i) => lastLog.includes(s) ? i : acc, -1);
+    if (stepIdx >= 0) bar.style.width = ((stepIdx + 1) / steps.length * 90) + '%';
+
+    if (data.status === 'running') {
+      setTimeout(() => pollStatus(jid, logs.length), 1500);
       return;
     }
 
-    const line = document.createElement('div');
-    line.className = 'log-line' + (msg.includes('[오류]') ? ' error' : '');
-    line.textContent = msg;
-    logBox.appendChild(line);
-    logBox.scrollTop = logBox.scrollHeight;
+    bar.style.width = '100%';
+    resetBtn();
 
-    // 진행바 업데이트
-    const matched = steps.findIndex(s => msg.includes(s));
-    if (matched > stepIdx) {
-      stepIdx = matched;
-      bar.style.width = ((stepIdx + 1) / steps.length * 90) + '%';
+    if (data.status === 'error') {
+      showError('분석 오류: ' + data.message);
+      return;
     }
-  };
-  es.onerror = () => {
-    es.close();
-    loadResult(jid);
-  };
+
+    // done
+    document.getElementById('result-section').style.display = 'block';
+    document.getElementById('dashboard-frame').srcdoc = data.dashboard_html;
+    window.scrollTo({ top: document.getElementById('result-section').offsetTop - 20, behavior: 'smooth' });
+
+  } catch (e) {
+    showError('서버 연결 오류: ' + e.message);
+    resetBtn();
+  }
 }
 
 async function loadResult(jid) {
-  const res = await fetch('/result/' + jid);
+  const res = await fetch('/status/' + jid);
   const data = await res.json();
   resetBtn();
 
