@@ -577,7 +577,7 @@
       <div style="display:flex;align-items:center;gap:8px">
         <div class="result-actions">
           <button class="btn-sm primary" onclick="downloadXlsx()">XLSX 다운로드</button>
-          <button class="btn-sm" onclick="downloadPrd()">PRD 다운로드</button>
+          <button class="btn-sm" onclick="downloadPrd()">PDF (PRD)</button>
           <button class="btn-sm" onclick="resetPage()">새 분석</button>
         </div>
         <div class="info-wrap">
@@ -766,7 +766,7 @@ function downloadXlsx() {
   if (currentJobId) window.location.href = '/download/' + currentJobId;
 }
 function downloadPrd() {
-  if (currentJobId) window.location.href = '/download-prd/' + currentJobId;
+  if (currentJobId) window.open('/download-prd/' + currentJobId, '_blank');
 }
 
 function resetBtn() {

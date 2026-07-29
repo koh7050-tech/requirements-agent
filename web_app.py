@@ -210,14 +210,10 @@ def download_prd(jid: str):
     if not xlsx_files:
         return "XLSX 없음", 404
     stem = state.get("filename", "result")
-    mode = state.get("summary", "")[:20]
     prd_html = generate_prd(xlsx_files[0], stem.replace("_", " "), "")
-    return send_file(
-        io.BytesIO(prd_html.encode("utf-8")),
-        mimetype="text/html",
-        as_attachment=True,
-        download_name=f"{stem}_PRD.html",
-    )
+    # 새 탭에서 열리는 HTML 페이지로 제공 (브라우저 인쇄 → PDF 저장)
+    from flask import Response
+    return Response(prd_html, mimetype="text/html; charset=utf-8")
 
 
 @app.route("/download/<jid>")
