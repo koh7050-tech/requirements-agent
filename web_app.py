@@ -119,10 +119,19 @@ def run_pipeline(jid: str, text: str, filename: str) -> None:
         append_log(jid, "  → 대시보드 생성 완료")
         append_log(jid, "=== 분석 완료 ===")
 
+        req_list = [
+            {"id": r["ID"], "text": r["요구사항"], "priority": r.get("우선순위", ""), "type": "FR"}
+            for r in data["functional_requirements"]
+        ] + [
+            {"id": r["ID"], "text": r["요구사항"], "priority": r.get("우선순위", ""), "type": "NFR"}
+            for r in data["nonfunctional_requirements"]
+        ]
+
         write_state(jid, {
             "status": "done",
             "filename": stem,
             "summary": summary_content,
+            "requirements": req_list,
         })
 
     except Exception as e:
@@ -194,6 +203,7 @@ def status(jid: str):
         resp["dashboard_html"] = dashboard_path.read_text(encoding="utf-8") if dashboard_path.exists() else ""
         resp["summary"] = state.get("summary", "")
         resp["filename"] = stem
+        resp["requirements"] = state.get("requirements", [])
 
     return jsonify(resp)
 

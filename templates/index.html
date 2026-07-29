@@ -379,6 +379,64 @@
     flex-shrink: 0;
   }
 
+  /* ── 요구사항 요약 ── */
+  #req-summary { display: none; }
+  .req-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .req-list::-webkit-scrollbar { width: 4px; }
+  .req-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .req-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .req-id {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--green);
+    flex-shrink: 0;
+    min-width: 52px;
+    font-family: 'SF Mono','Fira Code','Courier New',monospace;
+    padding-top: 1px;
+  }
+  .req-text {
+    font-size: 12px;
+    color: #ccc;
+    line-height: 1.55;
+    flex: 1;
+  }
+  .req-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    letter-spacing: .3px;
+    align-self: flex-start;
+    margin-top: 1px;
+  }
+  .badge-must   { background: rgba(240,64,64,.12); color: #f07070; border: 1px solid rgba(240,64,64,.22); }
+  .badge-should { background: rgba(255,170,50,.1); color: #f0aa50; border: 1px solid rgba(255,170,50,.2); }
+  .badge-could  { background: rgba(62,207,142,.1); color: var(--green); border: 1px solid rgba(62,207,142,.2); }
+  .badge-wont   { background: rgba(120,120,120,.08); color: var(--muted); border: 1px solid var(--border); }
+  .req-type-sep {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--muted2);
+    padding: 6px 0 2px;
+  }
+
   @media (max-width: 860px) {
     .container { grid-template-columns: 1fr; }
     .hero h1 { font-size: 2.2rem; }
@@ -571,6 +629,32 @@
     </div>
   </div>
 
+  <!-- 요구사항 요약 카드 -->
+  <div class="card" id="req-summary">
+    <div class="card-header">
+      <span class="card-label">Requirements Summary</span>
+      <div class="info-wrap">
+        <button class="info-btn" onclick="toggleInfo('info-reqsum', this)">i</button>
+        <div class="info-popup" id="info-reqsum">
+          <h4>요구사항 요약</h4>
+          <div class="info-row">
+            <div class="info-key">정의</div>
+            <div class="info-val">분석에서 도출된 기능(FR) 및 비기능(NFR) 요구사항 목록입니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">우선순위</div>
+            <div class="info-val">Must / Should / Could / Won't 기준으로 분류됩니다.</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key">활용</div>
+            <div class="info-val">XLSX 다운로드 시 FR/NFR 시트에서 전체 세부 내용을 확인하세요.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="req-list" id="req-list"></div>
+  </div>
+
   <!-- 결과 카드 -->
   <div class="card full-width" id="result-section" style="display:none">
     <div class="card-header">
@@ -578,7 +662,7 @@
       <div style="display:flex;align-items:center;gap:8px">
         <div class="result-actions">
           <button class="btn-sm primary" onclick="downloadXlsx()">XLSX 다운로드</button>
-          <button class="btn-sm" onclick="downloadPrd()">PDF (PRD)</button>
+          <button class="btn-sm" onclick="downloadPrd()">PDF</button>
           <button class="btn-sm" onclick="resetPage()">새 분석</button>
         </div>
         <div class="info-wrap">
@@ -753,6 +837,34 @@ async function pollStatus(jid, prevLogCount) {
 
     document.getElementById('dot').className = 'dot done';
     document.getElementById('status-text').textContent = 'Completed';
+
+    // 요구사항 요약 카드 채우기
+    const reqs = data.requirements || [];
+    const reqList = document.getElementById('req-list');
+    reqList.innerHTML = '';
+    if (reqs.length > 0) {
+      const badgeClass = { 'Must':'badge-must','Should':'badge-should','Could':'badge-could',"Won't":'badge-wont' };
+      let lastType = null;
+      reqs.forEach(r => {
+        if (r.type !== lastType) {
+          const sep = document.createElement('div');
+          sep.className = 'req-type-sep';
+          sep.textContent = r.type === 'FR' ? '기능 요구사항 (FR)' : '비기능 요구사항 (NFR)';
+          reqList.appendChild(sep);
+          lastType = r.type;
+        }
+        const item = document.createElement('div');
+        item.className = 'req-item';
+        const cls = badgeClass[r.priority] || 'badge-wont';
+        item.innerHTML =
+          '<span class="req-id">' + r.id + '</span>' +
+          '<span class="req-text">' + escapeHtml(r.text) + '</span>' +
+          '<span class="req-badge ' + cls + '">' + r.priority + '</span>';
+        reqList.appendChild(item);
+      });
+      document.getElementById('req-summary').style.display = 'block';
+    }
+
     document.getElementById('result-section').style.display = 'block';
     document.getElementById('dashboard-frame').srcdoc = data.dashboard_html;
     window.scrollTo({ top: document.getElementById('result-section').offsetTop - 20, behavior: 'smooth' });
@@ -761,6 +873,12 @@ async function pollStatus(jid, prevLogCount) {
     showError('네트워크 오류: ' + e.message);
     resetBtn();
   }
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(text));
+  return d.innerHTML;
 }
 
 function downloadXlsx() {
@@ -779,6 +897,8 @@ function resetBtn() {
 function resetPage() {
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('log-section').style.display = 'none';
+  document.getElementById('req-summary').style.display = 'none';
+  document.getElementById('req-list').innerHTML = '';
   document.getElementById('guide-card').style.display = 'block';
   document.getElementById('progress-bar').style.width = '0';
   document.getElementById('file-name').innerHTML = '';
